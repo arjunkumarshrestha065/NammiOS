@@ -3,180 +3,277 @@ package com.nammios.cockpit
 import android.app.Activity
 import android.content.Intent
 import android.graphics.*
-import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
-import android.speech.RecognizerIntent
-import android.view.Gravity
-import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
-import android.widget.*
-import java.util.Locale
+import android.widget.Toast
+import kotlin.math.min
 
 class MainActivity : Activity() {
-    private val bg = Color.rgb(5, 14, 29)
-    private val panel = Color.rgb(13, 31, 54)
-    private val panelLine = Color.rgb(31, 67, 103)
-    private val cyan = Color.rgb(47, 188, 255)
-    private val white = Color.WHITE
-    private val muted = Color.rgb(151, 177, 205)
-    private lateinit var root: LinearLayout
-    private lateinit var content: LinearLayout
-    private lateinit var pageTitle: TextView
-    private var page = "Home"
-    private val keyLog = mutableListOf<String>()
-
+    private lateinit var cockpit: CockpitView
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = bg
-        window.navigationBarColor = bg
-        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-        buildShell(); showPage("Home")
+        window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
+        window.statusBarColor = Color.rgb(5, 13, 26)
+        window.navigationBarColor = Color.rgb(5, 13, 26)
+        cockpit = CockpitView()
+        setContentView(cockpit)
     }
 
-    private fun rounded(color: Int, stroke: Int = Color.TRANSPARENT, radius: Float = 20f) = GradientDrawable().apply {
-        setColor(color); cornerRadius = radius
-        if (stroke != Color.TRANSPARENT) setStroke(1, stroke)
-    }
-    private fun grad(a: Int, b: Int) = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(a,b)).apply { cornerRadius = 24f }
-    private fun txt(s: String, size: Float, color: Int = white, bold: Boolean = false) = TextView(this).apply {
-        text=s; textSize=size; setTextColor(color); gravity=Gravity.CENTER_VERTICAL
-        if (bold) typeface=Typeface.create("sans-serif-medium", Typeface.BOLD)
+    private fun goHome() {
+        try { startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)) }
+        catch (_: Exception) { Toast.makeText(this, "System home unavailable", Toast.LENGTH_SHORT).show() }
     }
 
-    private fun buildShell() {
-        root=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(18,8,18,8); setBackgroundColor(bg) }
-        val header=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL }
-        val logo=txt("N",22f,white,true).apply { gravity=Gravity.CENTER; background=rounded(Color.rgb(0,132,215),cyan,12f) }
-        header.addView(logo,LinearLayout.LayoutParams(38,38))
-        val brand=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(9,0,0,0) }
-        brand.addView(txt("NAMMI OS",17f,white,true)); brand.addView(txt("SMART ELECTRIC COCKPIT",8f,muted,true))
-        header.addView(brand); header.addView(Space(this),LinearLayout.LayoutParams(0,1,1f))
-        header.addView(txt("● READY",9f,Color.rgb(77,220,173),true))
-        header.addView(txt("     12:09     24°C     ",10f,muted))
-        header.addView(topAction("VOICE", { startVoice() }))
-        header.addView(topAction("EXIT", { goHome() }))
-        root.addView(header,LinearLayout.LayoutParams(-1,43))
-        pageTitle=txt("OVERVIEW  /  YOUR ELECTRIC DRIVE",10f,cyan,true).apply { setPadding(3,4,0,5) }
-        root.addView(pageTitle)
-        content=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
-        val scroll=ScrollView(this).apply { isFillViewport=true; addView(content) }
-        root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
-        val dock=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER; background=rounded(Color.rgb(9,24,43),panelLine,20f); setPadding(5,2,5,2) }
-        listOf("⌂" to "Home","◈" to "Vehicle","♫" to "Media","◎" to "Camera","▦" to "Apps").forEach { (ic,n)-> dock.addView(dockButton(ic,n),LinearLayout.LayoutParams(0,44,1f)) }
-        root.addView(dock,LinearLayout.LayoutParams(-1,48)); setContentView(root)
-    }
+    inner class CockpitView : View(this) {
+        private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val bounds = RectF()
+        private var page = "HOME"
+        private var scale = 1f
+        private var ox = 0f
+        private var oy = 0f
+        private val navy = Color.rgb(5, 14, 28)
+        private val panel = Color.rgb(12, 28, 49)
+        private val muted = Color.rgb(148, 173, 200)
+        private val cyan = Color.rgb(58, 195, 255)
+        private val white = Color.WHITE
 
-    private fun topAction(name:String, action:()->Unit)=txt(name,9f,white,true).apply {
-        gravity=Gravity.CENTER; background=rounded(Color.rgb(19,49,78),panelLine,11f); setOnClickListener{action()}
-        layoutParams=LinearLayout.LayoutParams(62,32).apply{setMargins(3,0,3,0)}
-    }
-    private fun dockButton(icon:String,name:String)=LinearLayout(this).apply {
-        orientation=LinearLayout.VERTICAL; gravity=Gravity.CENTER
-        addView(txt(icon,18f,if(page==name) cyan else muted,true).apply{gravity=Gravity.CENTER})
-        addView(txt(name.uppercase(),8f,if(page==name) cyan else muted,true).apply{gravity=Gravity.CENTER})
-        setOnClickListener{showPage(name)}
-    }
-
-    private fun showPage(name:String) {
-        page=name; pageTitle.text=if(name=="Home") "OVERVIEW  /  YOUR ELECTRIC DRIVE" else "${name.uppercase()}  /  NAMMI OS"
-        content.removeAllViews()
-        when(name) {
-            "Home" -> homePage()
-            "Vehicle" -> vehiclePage()
-            "Media" -> simplePage("MEDIA CENTER","Music and entertainment","Connect a supported USB or music app to add playback. Media playback is not yet implemented in this prototype.")
-            "Camera" -> simplePage("360° SURROUND VIEW","OEM camera connection required","A supported OEM camera feed is required. This screen does not access or control the original camera system.")
-            "Apps" -> appsPage()
-            "Navigation" -> simplePage("NAVIGATION","Maps and route guidance","Map provider integration is not included in this prototype.")
-            "Climate" -> simplePage("CLIMATE CONTROL","OEM climate interface required","This is a visual placeholder. No AC commands are sent to the vehicle.")
-            "Phone" -> simplePage("PHONE","Phone connection","A supported phone integration is required for calls and contacts.")
-            "Settings" -> settingsPage()
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            scale = min(width / 1024f, height / 600f)
+            ox = (width - 1024f * scale) / 2f
+            oy = (height - 600f * scale) / 2f
+            canvas.save()
+            canvas.translate(ox, oy)
+            canvas.scale(scale, scale)
+            drawBackground(canvas)
+            if (page == "HOME") drawHome(canvas) else drawSubPage(canvas)
+            canvas.restore()
         }
-    }
 
-    private fun homePage() {
-        val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}
-        val hero=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;background=grad(Color.rgb(19,61,112),Color.rgb(7,27,55));setPadding(17,12,17,10)}
-        val heroHead=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
-        val headText=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
-        headText.addView(txt("NAMMI ELECTRIC",9f,Color.rgb(178,219,255),true))
-        headText.addView(txt("Ready for the road",18f,white,true))
-        heroHead.addView(headText,LinearLayout.LayoutParams(0,-2,1f))
-        heroHead.addView(txt("P",18f,white,true).apply{gravity=Gravity.CENTER;background=rounded(Color.rgb(0,119,205),cyan,30f)},LinearLayout.LayoutParams(36,36))
-        hero.addView(heroHead)
-        hero.addView(VehicleDrawing(this),LinearLayout.LayoutParams(-1,105))
-        hero.addView(View(this).apply{setBackgroundColor(Color.argb(70,180,220,255))},LinearLayout.LayoutParams(-1,1))
-        val metrics=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
-        metrics.addView(metric("BATTERY","--","%"),LinearLayout.LayoutParams(0,65,1f))
-        metrics.addView(metric("RANGE","--","km"),LinearLayout.LayoutParams(0,65,1f))
-        metrics.addView(metric("SPEED","--","km/h"),LinearLayout.LayoutParams(0,65,1f))
-        hero.addView(metrics); hero.addView(txt("LIVE VEHICLE DATA  •  NOT CONNECTED",8f,Color.rgb(177,211,239),true))
-        row.addView(hero,LinearLayout.LayoutParams(0,-1,1.15f).apply{setMargins(0,0,9,0)})
-        val tiles=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
-        val r1=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}; val r2=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}
-        r1.addView(appTile("⌖","NAVIGATION","Maps & routes",Color.rgb(12,107,204)){showPage("Navigation")},LinearLayout.LayoutParams(0,-1,1f).apply{setMargins(4,0,4,5)})
-        r1.addView(appTile("♫","MUSIC","USB & streaming",Color.rgb(112,48,169)){showPage("Media")},LinearLayout.LayoutParams(0,-1,1f).apply{setMargins(4,0,0,5)})
-        r2.addView(appTile("◎","360° CAMERA","Surround view",Color.rgb(0,119,137)){showPage("Camera")},LinearLayout.LayoutParams(0,-1,1f).apply{setMargins(4,5,4,0)})
-        r2.addView(appTile("❄","CLIMATE","AC controls",Color.rgb(19,91,174)){showPage("Climate")},LinearLayout.LayoutParams(0,-1,1f).apply{setMargins(4,5,0,0)})
-        tiles.addView(r1,LinearLayout.LayoutParams(-1,0,1f)); tiles.addView(r2,LinearLayout.LayoutParams(-1,0,1f))
-        row.addView(tiles,LinearLayout.LayoutParams(0,-1,1f)); content.addView(row,LinearLayout.LayoutParams(-1,0,1f).apply{setMargins(0,0,0,8)})
-        val quick=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER;background=rounded(Color.rgb(9,24,43),panelLine,18f);setPadding(5,3,5,3)}
-        quick.addView(quickItem("☎","PHONE","Connect device"){showPage("Phone")},LinearLayout.LayoutParams(0,52,1f))
-        quick.addView(quickItem("♫","AUDIO","Media controls"){showPage("Media")},LinearLayout.LayoutParams(0,52,1f))
-        quick.addView(quickItem("❄","CLIMATE","OEM interface"){showPage("Climate")},LinearLayout.LayoutParams(0,52,1f))
-        quick.addView(quickItem("⚙","SETTINGS","App settings"){showPage("Settings")},LinearLayout.LayoutParams(0,52,1f))
-        quick.addView(quickItem("⇥","EXIT","System home"){goHome()},LinearLayout.LayoutParams(0,52,1f))
-        content.addView(quick)
-    }
+        private fun paint(color: Int, style: Paint.Style = Paint.Style.FILL, stroke: Float = 1f): Paint =
+            Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color; this.style = style; this.strokeWidth = stroke }
 
-    private fun metric(title:String,value:String,unit:String)=LinearLayout(this).apply{
-        orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER
-        addView(txt(title,8f,Color.rgb(176,209,237),true).apply{gravity=Gravity.CENTER})
-        addView(txt(value,24f,white,true).apply{gravity=Gravity.CENTER})
-        addView(txt(unit,8f,muted).apply{gravity=Gravity.CENTER})
-    }
-    private fun appTile(icon:String,title:String,sub:String,color:Int,action:()->Unit)=LinearLayout(this).apply{
-        orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER;background=grad(color,Color.rgb((Color.red(color)*.68).toInt(),(Color.green(color)*.68).toInt(),(Color.blue(color)*.68).toInt()));setPadding(4,4,4,4)
-        addView(txt(icon,29f,white,true).apply{gravity=Gravity.CENTER})
-        addView(txt(title,10f,white,true).apply{gravity=Gravity.CENTER})
-        addView(txt(sub,8f,Color.rgb(224,235,248)).apply{gravity=Gravity.CENTER})
-        setOnClickListener{action()}
-    }
-    private fun quickItem(icon:String,title:String,sub:String,action:()->Unit)=LinearLayout(this).apply{
-        orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER
-        addView(txt("$icon  $title",10f,white,true).apply{gravity=Gravity.CENTER})
-        addView(txt(sub,8f,muted).apply{gravity=Gravity.CENTER});setOnClickListener{action()}
-    }
-    private fun vehiclePage(){
-        content.addView(txt("VEHICLE OVERVIEW",21f,white,true).apply{setPadding(5,12,5,10)})
-        val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}
-        listOf("BATTERY" to "--%","RANGE" to "-- km","SPEED" to "-- km/h","ODOMETER" to "-- km").forEach{(k,v)->
-            val card=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER;background=rounded(panel,panelLine,18f);addView(txt(k,9f,muted,true));addView(txt(v,23f,white,true))}
-            row.addView(card,LinearLayout.LayoutParams(0,100,1f).apply{setMargins(4,4,4,4)})
-        };content.addView(row);infoCard("Vehicle data connection","No verified read-only OEM data interface is connected. Live readings remain unavailable rather than showing invented values.")
-        infoCard("TPMS and energy consumption","These require a supported vehicle data interface.")
-    }
-    private fun appsPage(){content.addView(txt("ALL APPLICATIONS",21f,white,true).apply{setPadding(5,10,5,10)});listOf("Navigation","Media","Camera","Climate","Phone","Vehicle","Settings").forEach{n->content.addView(menuItem(n){showPage(n)})}}
-    private fun settingsPage(){
-        content.addView(txt("SYSTEM SETTINGS",21f,white,true).apply{setPadding(5,10,5,10)})
-        val sw=Switch(this).apply{text="Request launch when vehicle starts";setTextColor(white);isChecked=getSharedPreferences("nammios",MODE_PRIVATE).getBoolean("launch_at_boot",false);setOnCheckedChangeListener{_,v->getSharedPreferences("nammios",MODE_PRIVATE).edit().putBoolean("launch_at_boot",v).apply();Toast.makeText(this@MainActivity,"Saved. Vehicle firmware may block auto-launch.",Toast.LENGTH_LONG).show()}}
-        content.addView(sw);infoCard("Steering-wheel key test","While parked, press a steering-wheel button. If Android forwards its event to this app, the key code appears below. This app does not remap controls.")
-        content.addView(txt(if(keyLog.isEmpty())"No key events received." else keyLog.takeLast(10).joinToString("\n"),12f,muted))
-        content.addView(menuItem("Clear key event log"){keyLog.clear();showPage("Settings")});content.addView(menuItem("Exit to original system home"){goHome()})
-    }
-    private fun simplePage(title:String,subtitle:String,detail:String){content.addView(txt(title,23f,white,true).apply{setPadding(8,14,8,10)});infoCard(subtitle,detail);content.addView(menuItem("←  BACK TO HOME"){showPage("Home")})}
-    private fun infoCard(title:String,body:String){val c=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;background=rounded(panel,panelLine,18f);setPadding(15,13,15,13);addView(txt(title,15f,cyan,true));addView(txt(body,12f,white).apply{setPadding(0,6,0,0)})};content.addView(c,LinearLayout.LayoutParams(-1,-2).apply{setMargins(4,5,4,7)})}
-    private fun menuItem(name:String,action:()->Unit)=txt("   $name                                       ›",13f,white).apply{background=rounded(Color.rgb(17,40,67),panelLine,14f);setPadding(12,0,12,0);layoutParams=LinearLayout.LayoutParams(-1,46).apply{setMargins(4,4,4,4)};setOnClickListener{action()}}
+        private fun rr(c: Canvas, x: Float, y: Float, w: Float, h: Float, r: Float, color: Int,
+                       stroke: Int? = null, sw: Float = 1f) {
+            p.reset(); p.isAntiAlias = true; p.color = color
+            c.drawRoundRect(x, y, x+w, y+h, r, r, p)
+            if (stroke != null) {
+                p.style = Paint.Style.STROKE; p.strokeWidth = sw; p.color = stroke
+                c.drawRoundRect(x, y, x+w, y+h, r, r, p); p.style = Paint.Style.FILL
+            }
+        }
 
-    private fun startVoice(){val i=Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply{putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);putExtra(RecognizerIntent.EXTRA_LANGUAGE,Locale.getDefault());putExtra(RecognizerIntent.EXTRA_PROMPT,"Say home, vehicle, navigation, music, camera, climate or settings")};try{@Suppress("DEPRECATION") startActivityForResult(i,77)}catch(_:Exception){Toast.makeText(this,"Speech recognition unavailable.",Toast.LENGTH_SHORT).show()}}
-    @Deprecated("Legacy callback for Android compatibility") override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?){super.onActivityResult(requestCode,resultCode,data);if(requestCode==77&&resultCode==RESULT_OK){val s=data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.lowercase(Locale.getDefault())?:return;showPage(when{ "navigation" in s||"map" in s->"Navigation";"music" in s||"media" in s||"radio" in s->"Media";"camera" in s->"Camera";"climate" in s||"air" in s||s=="ac"->"Climate";"vehicle" in s||"car" in s->"Vehicle";"setting" in s->"Settings";else->"Home"})}}
-    override fun dispatchKeyEvent(event:KeyEvent):Boolean{if(event.action==KeyEvent.ACTION_DOWN){keyLog.add("Key ${event.keyCode} / Scan ${event.scanCode}");if(keyLog.size>30)keyLog.removeAt(0);if(page=="Settings")showPage("Settings")};return super.dispatchKeyEvent(event)}
-    private fun goHome(){try{startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME))}catch(_:Exception){Toast.makeText(this,"System home unavailable.",Toast.LENGTH_SHORT).show()}}
+        private fun txt(c: Canvas, s: String, x: Float, y: Float, size: Float,
+                        color: Int = white, bold: Boolean = false, align: Paint.Align = Paint.Align.LEFT) {
+            p.reset(); p.isAntiAlias = true; p.color = color; p.textSize = size; p.textAlign = align
+            p.typeface = if (bold) Typeface.create("sans-serif-medium", Typeface.BOLD)
+                         else Typeface.create("sans-serif", Typeface.NORMAL)
+            c.drawText(s, x, y, p)
+        }
 
-    private class VehicleDrawing(context:android.content.Context):View(context){
-        private val shell=Paint(3).apply{color=Color.rgb(185,211,232);style=Paint.Style.FILL}
-        private val glass=Paint(3).apply{color=Color.rgb(18,54,86);style=Paint.Style.FILL}
-        private val line=Paint(3).apply{color=Color.rgb(55,193,255);style=Paint.Style.STROKE;strokeWidth=3f}
-        private val wheel=Paint(3).apply{color=Color.rgb(5,17,32);style=Paint.Style.FILL}
-        override fun onDraw(c:Canvas){super.onDraw(c);val w=width.toFloat();val h=height.toFloat();val p=Path().apply{moveTo(w*.10f,h*.70f);lineTo(w*.18f,h*.49f);quadTo(w*.22f,h*.39f,w*.38f,h*.38f);lineTo(w*.62f,h*.38f);quadTo(w*.72f,h*.39f,w*.79f,h*.51f);lineTo(w*.90f,h*.58f);quadTo(w*.94f,h*.62f,w*.92f,h*.73f);lineTo(w*.86f,h*.78f);lineTo(w*.14f,h*.78f);close()};c.drawPath(p,shell);val g=Path().apply{moveTo(w*.31f,h*.44f);lineTo(w*.61f,h*.44f);lineTo(w*.73f,h*.56f);lineTo(w*.25f,h*.56f);close()};c.drawPath(g,glass);c.drawLine(w*.49f,h*.44f,w*.49f,h*.56f,line);c.drawCircle(w*.28f,h*.75f,h*.105f,wheel);c.drawCircle(w*.76f,h*.75f,h*.105f,wheel);c.drawCircle(w*.28f,h*.75f,h*.047f,shell);c.drawCircle(w*.76f,h*.75f,h*.047f,shell);c.drawLine(w*.11f,h*.69f,w*.89f,h*.69f,line)}
+        private fun line(c: Canvas, x1: Float, y1: Float, x2: Float, y2: Float, color: Int, sw: Float = 1f) {
+            p.reset(); p.isAntiAlias = true; p.color = color; p.strokeWidth = sw
+            c.drawLine(x1, y1, x2, y2, p)
+        }
+
+        private fun circle(c: Canvas, x: Float, y: Float, r: Float, color: Int,
+                           style: Paint.Style = Paint.Style.FILL, sw: Float = 1f) {
+            p.reset(); p.isAntiAlias = true; p.color = color; p.style = style; p.strokeWidth = sw
+            c.drawCircle(x, y, r, p)
+        }
+
+        private fun drawBackground(c: Canvas) {
+            p.shader = LinearGradient(0f, 0f, 1024f, 600f,
+                intArrayOf(Color.rgb(5,13,27), Color.rgb(8,22,41), Color.rgb(5,13,27)),
+                null, Shader.TileMode.CLAMP)
+            c.drawRect(0f, 0f, 1024f, 600f, p); p.shader = null
+            // Subtle ambient light blooms
+            p.shader = RadialGradient(270f, 280f, 430f,
+                intArrayOf(Color.argb(35, 15, 126, 210), Color.TRANSPARENT), null, Shader.TileMode.CLAMP)
+            c.drawRect(0f, 0f, 1024f, 600f, p); p.shader = null
+            for (i in 0..8) for (j in 0..4) circle(c, 18f+i*125, 92f+j*112, 1.1f, Color.argb(35,120,190,230))
+        }
+
+        private fun drawHome(c: Canvas) {
+            // Top brand bar
+            rr(c, 24f, 18f, 42f, 42f, 13f, Color.rgb(16,133,210), Color.rgb(67,198,255), 1.3f)
+            txt(c, "N", 45f, 47f, 28f, white, true, Paint.Align.CENTER)
+            txt(c, "NAMMI", 78f, 37f, 17f, white, true)
+            txt(c, "OS  /  SMART ELECTRIC COCKPIT", 79f, 51f, 8.5f, muted, true)
+            circle(c, 745f, 39f, 4f, Color.rgb(69,225,173))
+            txt(c, "SYSTEM READY", 757f, 43f, 9f, Color.rgb(105,229,190), true)
+            txt(c, "25°C", 865f, 43f, 11f, muted, true)
+            txt(c, "12:09", 920f, 43f, 11f, white, true)
+            rr(c, 965f, 21f, 34f, 34f, 11f, Color.rgb(17,42,68), Color.rgb(43,91,130))
+            txt(c, "⌕", 982f, 45f, 20f, cyan, true, Paint.Align.CENTER)
+
+            txt(c, "YOUR DRIVE, CONNECTED.", 28f, 91f, 10f, cyan, true)
+            txt(c, "Good afternoon", 28f, 119f, 23f, white, true)
+            txt(c, "Everything you need for a smarter journey.", 28f, 138f, 10f, muted)
+
+            // Hero vehicle card
+            rr(c, 24f, 155f, 570f, 345f, 25f, Color.rgb(12,31,55), Color.rgb(31,75,112), 1.2f)
+            p.shader = LinearGradient(24f,155f,594f,500f,
+                intArrayOf(Color.rgb(20,68,111),Color.rgb(10,34,62),Color.rgb(8,25,46)),
+                null,Shader.TileMode.CLAMP)
+            c.drawRoundRect(24f,155f,594f,500f,25f,25f,p); p.shader=null
+            txt(c, "NAMMI BOX", 49f, 190f, 10f, Color.rgb(167,219,255), true)
+            txt(c, "Electric. Elegant. Yours.", 49f, 216f, 21f, white, true)
+            rr(c, 490f, 178f, 75f, 28f, 14f, Color.rgb(16,103,169), Color.rgb(65,177,238))
+            txt(c, "PARKED", 527f, 196f, 9f, white, true, Paint.Align.CENTER)
+            drawCar(c)
+            // lower data strip
+            line(c, 48f, 420f, 570f, 420f, Color.argb(75,143,193,230))
+            drawMetric(c, 52f, "BATTERY", "--", "%")
+            drawMetric(c, 222f, "EST. RANGE", "--", "km")
+            drawMetric(c, 392f, "SPEED", "--", "km/h")
+            txt(c, "VEHICLE DATA NOT CONNECTED", 568f, 485f, 7.5f, Color.rgb(151,190,221), true, Paint.Align.RIGHT)
+
+            // Right side feature cards
+            txt(c, "QUICK ACCESS", 620f, 169f, 10f, muted, true)
+            feature(c, 620f, 185f, 181f, 142f, "NAVIGATION", "Maps & route guidance", "N", Color.rgb(14,105,190), "⌖")
+            feature(c, 816f, 185f, 181f, 142f, "MUSIC", "Your favourite audio", "M", Color.rgb(114,59,174), "♫")
+            feature(c, 620f, 343f, 181f, 142f, "360° CAMERA", "Surround view", "C", Color.rgb(0,119,139), "◎")
+            feature(c, 816f, 343f, 181f, 142f, "CLIMATE", "Cabin comfort", "A", Color.rgb(24,103,176), "❄")
+
+            // bottom floating dock
+            rr(c, 24f, 520f, 973f, 61f, 19f, Color.rgb(10,24,42), Color.rgb(34,67,98), 1f)
+            dock(c, 90f, "⌂", "HOME", true)
+            dock(c, 270f, "▣", "VEHICLE", false)
+            dock(c, 450f, "♫", "MEDIA", false)
+            dock(c, 630f, "◎", "CAMERA", false)
+            dock(c, 810f, "⚙", "SETTINGS", false)
+            line(c, 900f, 531f, 900f, 570f, Color.rgb(42,70,98))
+            txt(c, "EXIT", 950f, 555f, 9f, Color.rgb(255,173,173), true, Paint.Align.CENTER)
+            txt(c, "↗", 950f, 571f, 15f, Color.rgb(255,173,173), true, Paint.Align.CENTER)
+        }
+
+        private fun drawCar(c: Canvas) {
+            // soft blue glow under the vehicle
+            p.shader = RadialGradient(310f, 352f, 245f,
+                intArrayOf(Color.argb(105,25,157,237),Color.argb(0,20,100,180)),null,Shader.TileMode.CLAMP)
+            c.drawOval(75f,260f,550f,414f,p); p.shader=null
+            // Wheels
+            circle(c, 170f, 370f, 37f, Color.rgb(4,12,23))
+            circle(c, 170f, 370f, 22f, Color.rgb(80,112,139))
+            circle(c, 170f, 370f, 10f, Color.rgb(16,35,54))
+            circle(c, 439f, 370f, 37f, Color.rgb(4,12,23))
+            circle(c, 439f, 370f, 22f, Color.rgb(80,112,139))
+            circle(c, 439f, 370f, 10f, Color.rgb(16,35,54))
+            val body = Path().apply {
+                moveTo(89f,347f); lineTo(111f,310f); quadTo(124f,286f,168f,281f)
+                lineTo(213f,254f); quadTo(232f,242f,267f,242f); lineTo(357f,242f)
+                quadTo(387f,244f,411f,276f); lineTo(460f,293f)
+                quadTo(489f,303f,504f,329f); lineTo(510f,352f)
+                quadTo(507f,365f,486f,367f); lineTo(123f,367f)
+                quadTo(91f,366f,89f,347f); close()
+            }
+            p.shader = LinearGradient(100f,245f,470f,370f,
+                intArrayOf(Color.rgb(229,244,252),Color.rgb(102,155,190),Color.rgb(39,88,126)),
+                null,Shader.TileMode.CLAMP)
+            c.drawPath(body,p); p.shader=null
+            val glass = Path().apply {
+                moveTo(194f,277f); lineTo(225f,253f); quadTo(240f,248f,267f,248f)
+                lineTo(353f,248f); quadTo(374f,249f,393f,279f); close()
+            }
+            p.color = Color.rgb(16,47,74); c.drawPath(glass,p)
+            line(c, 286f, 249f, 286f, 280f, Color.rgb(91,159,197), 2f)
+            line(c, 358f, 249f, 382f, 280f, Color.rgb(91,159,197), 2f)
+            rr(c, 95f, 328f, 26f, 8f, 4f, Color.rgb(124,224,255))
+            rr(c, 485f, 330f, 19f, 8f, 4f, Color.rgb(255,92,105))
+            line(c, 132f, 351f, 471f, 351f, Color.rgb(220,241,252), 2f)
+            // stylized road lines
+            line(c, 75f, 408f, 510f, 408f, Color.argb(65,90,178,220), 1f)
+        }
+
+        private fun drawMetric(c: Canvas, x: Float, title: String, value: String, unit: String) {
+            txt(c, title, x, 444f, 8f, muted, true)
+            txt(c, value, x, 478f, 27f, white, true)
+            txt(c, unit, x+37f, 478f, 10f, cyan, true)
+        }
+
+        private fun feature(c: Canvas, x: Float, y: Float, w: Float, h: Float,
+                            title: String, sub: String, tag: String, color: Int, glyph: String) {
+            rr(c, x, y, w, h, 20f, Color.rgb(13,30,51), Color.rgb(34,67,98), 1f)
+            p.shader = LinearGradient(x,y,x+w,y+h,
+                intArrayOf(Color.argb(95,Color.red(color),Color.green(color),Color.blue(color)),Color.TRANSPARENT),
+                null,Shader.TileMode.CLAMP)
+            c.drawRoundRect(x,y,x+w,y+h,20f,20f,p); p.shader=null
+            rr(c, x+14f, y+13f, 48f, 48f, 15f, color)
+            txt(c, glyph, x+38f, y+47f, 25f, white, true, Paint.Align.CENTER)
+            txt(c, title, x+14f, y+91f, 11f, white, true)
+            txt(c, sub, x+14f, y+110f, 8.5f, muted)
+            txt(c, "OPEN  ›", x+w-14f, y+h-14f, 8f, cyan, true, Paint.Align.RIGHT)
+        }
+
+        private fun dock(c: Canvas, x: Float, glyph: String, name: String, active: Boolean) {
+            if (active) rr(c, x-50f, 526f, 100f, 49f, 14f, Color.rgb(17,65,102))
+            txt(c, glyph, x, 550f, 18f, if(active) cyan else muted, true, Paint.Align.CENTER)
+            txt(c, name, x, 568f, 7f, if(active) white else muted, true, Paint.Align.CENTER)
+        }
+
+        private fun drawSubPage(c: Canvas) {
+            rr(c, 24f, 18f, 42f, 42f, 13f, Color.rgb(16,133,210), Color.rgb(67,198,255))
+            txt(c, "N", 45f, 47f, 28f, white, true, Paint.Align.CENTER)
+            txt(c, "NAMMI OS", 80f, 45f, 17f, white, true)
+            txt(c, page, 32f, 126f, 28f, white, true)
+            txt(c, "SMART ELECTRIC COCKPIT", 32f, 148f, 9f, cyan, true)
+            rr(c, 32f, 178f, 960f, 300f, 24f, panel, Color.rgb(34,70,105))
+            val title = when(page) {
+                "VEHICLE" -> "Live vehicle information"
+                "MEDIA" -> "Music and entertainment"
+                "CAMERA" -> "360° surround camera"
+                "SETTINGS" -> "Application settings"
+                "NAVIGATION" -> "Navigation and route guidance"
+                "CLIMATE" -> "Cabin climate"
+                else -> page
+            }
+            txt(c, title, 70f, 235f, 22f, white, true)
+            val desc = when(page) {
+                "VEHICLE" -> "Battery, range, speed, odometer and TPMS require a supported read-only OEM data interface."
+                "MEDIA" -> "Connect a supported music app or USB media source. Playback integration is not yet configured."
+                "CAMERA" -> "The factory 360° camera feed requires an approved OEM camera interface."
+                "SETTINGS" -> "Launch at startup is best-effort. Vehicle firmware may restrict automatic app launch."
+                "NAVIGATION" -> "Map provider integration is the next development step."
+                "CLIMATE" -> "Use the original vehicle climate controls until an approved OEM interface is available."
+                else -> "Nammi OS"
+            }
+            txt(c, desc, 70f, 272f, 12f, muted)
+            rr(c, 70f, 330f, 150f, 52f, 14f, Color.rgb(16,103,169))
+            txt(c, "‹  BACK HOME", 145f, 362f, 11f, white, true, Paint.Align.CENTER)
+            rr(c, 32f, 520f, 960f, 61f, 18f, Color.rgb(10,24,42), Color.rgb(34,67,98))
+            txt(c, "NAMMI OS  •  PREMIUM COCKPIT", 55f, 555f, 9f, muted, true)
+            txt(c, "HOME", 950f, 555f, 10f, cyan, true, Paint.Align.CENTER)
+        }
+
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            if (event.action != MotionEvent.ACTION_UP) return true
+            val x = (event.x - ox) / scale
+            val y = (event.y - oy) / scale
+            if (page != "HOME") {
+                if (y > 300f || (x < 250f && y > 300f)) page = "HOME"
+            } else {
+                when {
+                    y in 185f..327f && x in 620f..801f -> page = "NAVIGATION"
+                    y in 185f..327f && x in 816f..997f -> page = "MEDIA"
+                    y in 343f..485f && x in 620f..801f -> page = "CAMERA"
+                    y in 343f..485f && x in 816f..997f -> page = "CLIMATE"
+                    y in 520f..590f && x in 210f..350f -> page = "VEHICLE"
+                    y in 520f..590f && x in 390f..520f -> page = "MEDIA"
+                    y in 520f..590f && x in 570f..700f -> page = "CAMERA"
+                    y in 520f..590f && x in 740f..880f -> page = "SETTINGS"
+                    y in 520f..590f && x > 900f -> {
+                        startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME))
+                    }
+                    y in 520f..590f && x < 160f -> page = "HOME"
+                }
+            }
+            invalidate()
+            return true
+        }
     }
 }
